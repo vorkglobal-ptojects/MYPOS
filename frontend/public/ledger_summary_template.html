@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Financial Summary - Minimal Clean UI Prototype</title>
+  <!-- Google Fonts & Tailwind CSS -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #f8fafc;
+    }
+    .heading-font {
+      font-family: 'Outfit', sans-serif;
+    }
+  </style>
+</head>
+<body class="p-4 md:p-8 text-slate-800 min-h-screen flex flex-col justify-center">
+
+  <div class="max-w-6xl mx-auto w-full space-y-6">
+    
+    <!-- Top Header & Banner -->
+    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+      <h1 class="text-2xl font-extrabold text-slate-900 heading-font tracking-tight">
+        Daily Financial Summary
+      </h1>
+    </div>
+
+    <!-- Main Dual-Column Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- ==========================================
+           COLUMN A: CASH ACCOUNTING (GREEN THEME)
+           ========================================== -->
+      <div class="bg-white rounded-2xl border-2 border-emerald-500/30 shadow-lg overflow-hidden flex flex-col justify-between">
+        
+        <!-- Header Banner -->
+        <div class="bg-emerald-600 px-6 py-4 text-white">
+          <h2 class="text-base font-extrabold heading-font tracking-wider uppercase">CASH ACCOUNTING</h2>
+        </div>
+
+        <!-- Form Items -->
+        <div class="p-6 space-y-4 flex-1">
+          
+          <!-- 1B. Opening Cash -->
+          <div class="flex justify-between items-center bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+            <span class="font-extrabold text-xs text-emerald-950">1B. Opening Cash</span>
+            <input type="number" id="opening_cash" value="108840" oninput="calculateAll()" 
+                   class="w-36 bg-white border border-emerald-300 rounded-lg px-3 py-1 text-right font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-emerald-500">
+          </div>
+
+          <!-- Cash Received -->
+          <div class="space-y-2 pt-2 border-t border-slate-100">
+            <span class="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Cash Received</span>
+            
+            <div class="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span class="text-xs font-bold text-slate-700">Cash In (Office / Transfer In)</span>
+              <input type="number" id="cash_in" value="0" oninput="calculateAll()" class="w-32 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-right font-mono text-xs font-bold">
+            </div>
+
+            <div class="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span class="text-xs font-bold text-slate-700">Redeem Cash</span>
+              <input type="number" id="redeem_cash" value="0" oninput="calculateAll()" class="w-32 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-right font-mono text-xs font-bold">
+            </div>
+
+            <div class="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span class="text-xs font-bold text-slate-700">Receive (Interest)</span>
+              <input type="number" id="interest_cash" value="0" oninput="calculateAll()" class="w-32 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-right font-mono text-xs font-bold">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                <span class="text-[11px] font-bold text-slate-600 block">Recovery</span>
+                <input type="number" id="recovery_cash" value="1384.75" oninput="calculateAll()" class="w-full mt-1 bg-white border border-slate-300 rounded-lg px-2 py-1 text-right font-mono text-xs font-bold">
+              </div>
+              <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                <span class="text-[11px] font-bold text-slate-600 block">Insurance</span>
+                <input type="number" id="insurance_cash" value="5.25" oninput="calculateAll()" class="w-full mt-1 bg-white border border-slate-300 rounded-lg px-2 py-1 text-right font-mono text-xs font-bold">
+              </div>
+            </div>
+          </div>
+
+          <!-- Cash Paid Out -->
+          <div class="space-y-2 pt-2 border-t border-slate-100">
+            <span class="text-[10px] font-black text-rose-700 uppercase tracking-wider block">Cash Paid Out</span>
+
+            <div class="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span class="text-xs font-bold text-slate-700">Cash Out / Transfer Out</span>
+              <input type="number" id="cash_out" value="0" oninput="calculateAll()" class="w-32 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-right font-mono text-xs font-bold">
+            </div>
+
+            <div class="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span class="text-xs font-bold text-slate-700">Loans Issued</span>
+              <input type="number" id="loan_cash" value="55390" oninput="calculateAll()" class="w-32 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-right font-mono text-xs font-bold">
+            </div>
+
+            <div class="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span class="text-xs font-bold text-slate-700">Expenses</span>
+              <input type="number" id="expense_cash" value="40" oninput="calculateAll()" class="w-32 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-right font-mono text-xs font-bold">
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Closing Cash Result Card (Bottom) -->
+        <div class="p-5 bg-emerald-50 border-t-2 border-emerald-500/40 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-black text-emerald-950 uppercase tracking-wider">L/Balance (Closing Cash)</span>
+            <span class="text-xl font-black font-mono text-emerald-950" id="calc_cash_display">LKR 54,800.00</span>
+          </div>
+
+          <div class="pt-2 border-t border-emerald-200 flex items-center justify-between gap-3">
+            <span class="text-xs font-bold text-slate-700">Closing Cash Entered:</span>
+            <input type="number" id="user_cash_input" value="54800" class="w-36 bg-white border-2 border-emerald-400 rounded-xl px-3 py-1.5 text-right font-mono font-bold text-xs text-emerald-900 focus:outline-none">
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ==========================================
+           COLUMN B: CAPITAL ACCOUNTING - CP (BLUE THEME)
+           ========================================== -->
+      <div class="bg-white rounded-2xl border-2 border-blue-500/30 shadow-lg overflow-hidden flex flex-col justify-between">
+        
+        <!-- Header Banner -->
+        <div class="bg-blue-600 px-6 py-4 text-white">
+          <h2 class="text-base font-extrabold heading-font tracking-wider uppercase">CAPITAL ACCOUNTING (CP)</h2>
+        </div>
+
+        <!-- Form Items -->
+        <div class="p-6 space-y-5 flex-1">
+          
+          <!-- 1A. Opening Capital -->
+          <div class="flex justify-between items-center bg-blue-50/70 p-3 rounded-xl border border-blue-200">
+            <span class="font-extrabold text-xs text-blue-950">1A. Opening Capital</span>
+            <input type="number" id="opening_cap" value="335170" oninput="calculateAll()" 
+                   class="w-36 bg-white border border-blue-300 rounded-lg px-3 py-1 text-right font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-blue-500">
+          </div>
+
+          <!-- Capital Transactions -->
+          <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+            <span class="text-xs font-black text-blue-950 uppercase tracking-wider block">Capital Transactions</span>
+
+            <div class="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-200">
+              <span class="text-xs font-extrabold text-slate-700">4. Loans Issued (+)</span>
+              <span class="font-mono font-bold text-xs text-rose-600" id="cap_loans_display">LKR 55,390.00</span>
+            </div>
+
+            <div class="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-200">
+              <span class="text-xs font-extrabold text-slate-700">5. Redeems (-)</span>
+              <span class="font-mono font-bold text-xs text-emerald-600" id="cap_redeems_display">LKR 0.00</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Closing Capital Result Card (Bottom) -->
+        <div class="p-5 bg-blue-50 border-t-2 border-blue-500/40 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-black text-blue-950 uppercase tracking-wider">CP Balance (Closing Capital)</span>
+            <span class="text-xl font-black font-mono text-blue-950" id="calc_cap_display">LKR 390,560.00</span>
+          </div>
+
+          <div class="pt-2 border-t border-blue-200 flex items-center justify-between gap-3">
+            <span class="text-xs font-bold text-slate-700">Closing CP Entered:</span>
+            <input type="number" id="user_cap_input" value="390560" class="w-36 bg-white border-2 border-blue-400 rounded-xl px-3 py-1.5 text-right font-mono font-bold text-xs text-blue-900 focus:outline-none">
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    function calculateAll() {
+      const opCash = parseFloat(document.getElementById('opening_cash').value) || 0;
+      const cashIn = parseFloat(document.getElementById('cash_in').value) || 0;
+      const redeemCash = parseFloat(document.getElementById('redeem_cash').value) || 0;
+      const interestCash = parseFloat(document.getElementById('interest_cash').value) || 0;
+      const recoveryCash = parseFloat(document.getElementById('recovery_cash').value) || 0;
+      const insuranceCash = parseFloat(document.getElementById('insurance_cash').value) || 0;
+
+      const cashOut = parseFloat(document.getElementById('cash_out').value) || 0;
+      const loanCash = parseFloat(document.getElementById('loan_cash').value) || 0;
+      const expenseCash = parseFloat(document.getElementById('expense_cash').value) || 0;
+
+      const calcCash = opCash + cashIn + redeemCash + interestCash + recoveryCash + insuranceCash - cashOut - loanCash - expenseCash;
+      document.getElementById('calc_cash_display').innerText = 'LKR ' + calcCash.toLocaleString('en-US', { minimumFractionDigits: 2 });
+      document.getElementById('user_cash_input').value = calcCash;
+
+      // Capital math
+      const opCap = parseFloat(document.getElementById('opening_cap').value) || 0;
+      const calcCap = opCap + loanCash - redeemCash;
+
+      document.getElementById('cap_loans_display').innerText = 'LKR ' + loanCash.toLocaleString('en-US', { minimumFractionDigits: 2 });
+      document.getElementById('cap_redeems_display').innerText = 'LKR ' + redeemCash.toLocaleString('en-US', { minimumFractionDigits: 2 });
+      document.getElementById('calc_cap_display').innerText = 'LKR ' + calcCap.toLocaleString('en-US', { minimumFractionDigits: 2 });
+      document.getElementById('user_cap_input').value = calcCap;
+    }
+
+    calculateAll();
+  </script>
+
+</body>
+</html>

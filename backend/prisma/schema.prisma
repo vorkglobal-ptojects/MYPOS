@@ -1,0 +1,587 @@
+// ==============================================================================
+// MIFOS PAWNING & MICROFINANCE ENTERPRISE PRISMA SCHEMA
+// Database: PostgreSQL 15+ (Supabase Cloud)
+// Precision Standard: Strict @db.Decimal(19, 4) for all currency and weight fields
+// Zero Float Types Allowed in Financial Contexts
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------------------------------------------------------
+// 1. ORGANIZATIONAL HIERARCHY & USER MANAGEMENT
+// ------------------------------------------------------------------------------
+
+model Branch {
+  id        String   @id
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  status         BranchStatus?
+  profiles       Profile[]
+  clients        Client[]
+  pawns          Pawn[]
+  stockCustomers StockCustomer[]
+  stockItems     StockItem[]
+  dailyLedgers   DailyLedger[]
+  cashTills      CashTill[]
+  bankAccounts   BankAccount[]
+
+  @@map("branches")
+}
+
+model BranchStatus {
+  branchId  String   @id @map("branch_id")
+  status    String   @default("CLOSED")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("branch_status")
+}
+
+model Profile {
+  id         String   @id
+  email      String
+  firstName  String?  @map("first_name")
+  lastName   String?  @map("last_name")
+  phone      String?
+  avatarUrl  String?  @map("avatar_url")
+  branchId   String?  @map("branch_id")
+  branchName String?  @map("branch_name")
+  role       String   @default("TELLER")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  tillSessions TillSession[]
+
+  @@map("profiles")
+}
+
+// ------------------------------------------------------------------------------
+// 2. CLIENTS & KYC BORROWERS
+// ------------------------------------------------------------------------------
+
+model Client {
+  id              String   @id @default(uuid())
+  nationalId      String   @map("national_id")
+  firstName       String   @map("first_name")
+  lastName        String?  @default(".") @map("last_name")
+  phone           String?
+  address         String?
+  branchId        String   @map("branch_id")
+  createdByUserId String?  @map("created_by_user_id")
+  status          String   @default("ACTIVE")
+  nicImage        String?  @map("nic_image")
+  signatureImage  String?  @map("signature_image")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  branch          Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  pawns           Pawn[]
+
+  @@unique([branchId, nationalId])
+  @@map("clients")
+}
+
+model StockCustomer {
+  id          String   @id @default(uuid())
+  name        String
+  address     String
+  address2    String?  @map("address_2")
+  tp          String
+  nic         String?
+  billNumbers String?  @map("bill_numbers")
+  branchId    String?  @map("branch_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  branch      Branch?  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("stock_customers")
+}
+
+// ------------------------------------------------------------------------------
+// 3. PAWN TICKETS & GOLD COLLATERAL (Strict Decimal 19, 4)
+// ------------------------------------------------------------------------------
+
+model Pawn {
+  id              String    @id @default(uuid())
+  billNo          String?   @map("bill_no")
+  clientId        String    @map("client_id")
+  description     String
+  weightGrams     Decimal   @default(0.0000) @map("weight_grams") @db.Decimal(19, 4)
+  weightMg        Decimal   @default(0.0000) @map("weight_mg") @db.Decimal(19, 4)
+  appraisedValue  Decimal   @default(0.0000) @map("appraised_value") @db.Decimal(19, 4)
+  disbursedAmount Decimal   @default(0.0000) @map("disbursed_amount") @db.Decimal(19, 4)
+  interestRate    Decimal   @default(3.5000) @map("interest_rate") @db.Decimal(19, 4)
+  periodMonths    Int       @default(3) @map("period_months")
+  branchId        String    @map("branch_id")
+  createdByUserId String?   @map("created_by_user_id")
+  status          String    @default("PENDING_APPROVAL")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at") @db.Timestamptz
+  redeemedAt      DateTime? @map("redeemed_at") @db.Timestamptz
+  redeemAmount    Decimal?  @map("redeem_amount") @db.Decimal(19, 4)
+  redeemInterest  Decimal?  @map("redeem_interest") @db.Decimal(19, 4)
+  redeemedBy      String?   @map("redeemed_by")
+  packetQr        String?   @map("packet_qr")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  branch          Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  items           PawnItem[]
+
+  @@unique([branchId, billNo])
+  @@index([packetQr])
+  @@map("pawns")
+}
+
+model PawnItem {
+  id             String   @id @default(uuid())
+  pawnId         String   @map("pawn_id")
+  itemType       String   @default("CH") @map("item_type") @db.VarChar(100)
+  description    String
+  purity         String?  @default("22K")
+  weightGrams    Decimal  @default(0.0000) @map("weight_grams") @db.Decimal(19, 4)
+  weightMg       Decimal  @default(0.0000) @map("weight_mg") @db.Decimal(19, 4)
+  appraisedValue Decimal  @default(0.0000) @map("appraised_value") @db.Decimal(19, 4)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  pawn           Pawn     @relation(fields: [pawnId], references: [id], onDelete: Cascade)
+
+  @@map("pawn_items")
+}
+
+model RejectedEvaluation {
+  id                  String   @id @default(uuid())
+  airWeight           Decimal? @default(0.0000) @map("air_weight") @db.Decimal(19, 4)
+  waterWeight         Decimal? @default(0.0000) @map("water_weight") @db.Decimal(19, 4)
+  specificGravity     Decimal? @default(0.0000) @map("specific_gravity") @db.Decimal(19, 4)
+  estimatedKarat      String?  @map("estimated_karat")
+  askingAmount        Decimal? @default(0.0000) @map("asking_amount") @db.Decimal(19, 4)
+  trueValue           Decimal? @default(0.0000) @map("true_value") @db.Decimal(19, 4)
+  status              String?
+  airWeightPhotoUrl   String?  @map("air_weight_photo_url")
+  waterWeightPhotoUrl String?  @map("water_weight_photo_url")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("rejected_evaluations")
+}
+
+// ------------------------------------------------------------------------------
+// 4. LEGACY STOCK INVENTORY & STOCK INTERESTS (Strict Decimal 19, 4)
+// ------------------------------------------------------------------------------
+
+model StockItem {
+  id          String   @id @default(uuid())
+  billNo      String   @map("bill_no")
+  pawnDate    DateTime @map("pawn_date") @db.Date
+  period      String?
+  articles    String
+  appValue    Decimal  @default(0.0000) @map("app_value") @db.Decimal(19, 4)
+  amount      Decimal  @default(0.0000) @db.Decimal(19, 4)
+  interest    Decimal  @default(0.0000) @db.Decimal(19, 4)
+  balance     Decimal  @default(0.0000) @db.Decimal(19, 4)
+  weightG     Decimal  @default(0.0000) @map("weight_g") @db.Decimal(19, 4)
+  weightMg    Decimal  @default(0.0000) @map("weight_mg") @db.Decimal(19, 4)
+  branch      String
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  branchRel   Branch?  @relation(fields: [branch], references: [id], onDelete: Cascade)
+
+  @@map("stock_items")
+}
+
+model StockInterest {
+  id            String   @id
+  billNo        String   @map("bill_no")
+  itemId        String?  @map("item_id")
+  date          DateTime @db.Date
+  interestValue Decimal  @default(0.0000) @map("interest_value") @db.Decimal(19, 4)
+  branch        String
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([billNo, branch])
+  @@index([date])
+  @@map("stock_interests")
+}
+
+// ------------------------------------------------------------------------------
+// 5. DAILY LEDGERS & GENERAL LEDGER ACCOUNTING (Strict Decimal 19, 4)
+// ------------------------------------------------------------------------------
+
+model DailyLedger {
+  id               String   @id @default(uuid())
+  branchId         String   @map("branch_id")
+  ledgerDate       DateTime @map("ledger_date") @db.Date
+  openingBalance   Decimal  @default(0.0000) @map("opening_balance") @db.Decimal(19, 4)
+  closingBalance   Decimal  @default(0.0000) @map("closing_balance") @db.Decimal(19, 4)
+  transferIn       Decimal  @default(0.0000) @map("transfer_in") @db.Decimal(19, 4)
+  transferOut      Decimal  @default(0.0000) @map("transfer_out") @db.Decimal(19, 4)
+  loanIssuedTotal  Decimal  @default(0.0000) @map("loan_issued_total") @db.Decimal(19, 4)
+  redemptionTotal  Decimal  @default(0.0000) @map("redemption_total") @db.Decimal(19, 4)
+  actualCashCount  Decimal  @default(0.0000) @map("actual_cash_count") @db.Decimal(19, 4)
+  variance         Decimal  @default(0.0000) @db.Decimal(19, 4)
+  status           String   @default("OPEN")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  branch           Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  transactions     DailyLedgerTransaction[]
+  expenses         DailyLedgerExpense[]
+
+  @@unique([branchId, ledgerDate], map: "unique_branch_ledger_date")
+  @@map("daily_ledgers")
+}
+
+model DailyLedgerTransaction {
+  id            String   @id @default(uuid())
+  dailyLedgerId String   @map("daily_ledger_id")
+  loanNo        String   @map("loan_no")
+  type          String   @default("I")
+  amount        Decimal  @default(0.0000) @db.Decimal(19, 4)
+  insurance     Decimal  @default(0.0000) @db.Decimal(19, 4)
+  weightG       Decimal  @default(0.0000) @map("weight_g") @db.Decimal(19, 4)
+  weightMg      Decimal  @default(0.0000) @map("weight_mg") @db.Decimal(19, 4)
+  itemCode      String?  @map("item_code")
+  interest      Decimal  @default(0.0000) @db.Decimal(19, 4)
+  cashReceived  Decimal  @default(0.0000) @map("cash_received") @db.Decimal(19, 4)
+  remarks       String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  dailyLedger   DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Cascade)
+
+  @@map("daily_ledger_transactions")
+}
+
+model DailyLedgerExpense {
+  id            String   @id @default(uuid())
+  dailyLedgerId String   @map("daily_ledger_id")
+  description   String
+  amount        Decimal  @default(0.0000) @db.Decimal(19, 4)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  dailyLedger   DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Cascade)
+
+  @@map("daily_ledger_expenses")
+}
+
+model VaultTransfer {
+  id          String   @id
+  date        DateTime @db.Date
+  time        String?
+  fromVault   String   @map("from_vault")
+  toVault     String   @map("to_vault")
+  amount      Decimal  @db.Decimal(19, 4)
+  status      String   @default("Pending")
+  initiatedBy String?  @map("initiated_by")
+  approvedBy  String?  @map("approved_by")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("vault_transfer")
+}
+
+model Account {
+  id          String   @id
+  code        String   @unique
+  name        String
+  type        String
+  balance     Decimal  @default(0.0000) @db.Decimal(19, 4)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("account")
+}
+
+model JournalEntry {
+  id          String   @id
+  date        DateTime @db.Date
+  description String
+  reference   String?
+  totalDebit  Decimal  @default(0.0000) @map("total_debit") @db.Decimal(19, 4)
+  totalCredit Decimal  @default(0.0000) @map("total_credit") @db.Decimal(19, 4)
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  lines       JournalEntryLine[]
+
+  @@map("journal_entry")
+}
+
+model JournalEntryLine {
+  id             BigInt   @id @default(autoincrement())
+  journalEntryId String   @map("journal_entry_id")
+  accountName    String   @map("account_name")
+  debit          Decimal  @default(0.0000) @db.Decimal(19, 4)
+  credit         Decimal  @default(0.0000) @db.Decimal(19, 4)
+
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  @@map("journal_entry_line")
+}
+
+model Transaction {
+  id             String   @id @default(uuid())
+  clientId       String   @map("client_id")
+  type           String
+  branchId       String?  @map("branch_id")
+  targetBranchId String?  @map("target_branch_id")
+  amount         Decimal  @default(0.0000) @db.Decimal(19, 4)
+  description    String?
+  timestamp      DateTime @default(now()) @db.Timestamptz
+
+  @@map("transaction")
+}
+
+// ------------------------------------------------------------------------------
+// 6. ENTERPRISE CASH & BANK MANAGEMENT (Strict Decimal 19, 4)
+// ------------------------------------------------------------------------------
+
+model BankAccount {
+  id            String   @id @default(uuid())
+  bankName      String   @map("bank_name")
+  accountName   String   @map("account_name")
+  accountNumber String   @unique @map("account_number")
+  currency      String   @default("LKR")
+  branchId      String?  @map("branch_id")
+  glAccountName String   @default("Bank Asset") @map("gl_account_name")
+  currentBalance Decimal @default(0.0000) @map("current_balance") @db.Decimal(19, 4)
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  branch        Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@map("bank_accounts")
+}
+
+model CashTill {
+  id           String   @id @default(uuid())
+  branchId     String   @map("branch_id")
+  tillName     String   @map("till_name")
+  assignedRole String   @default("TELLER") @map("assigned_role")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sessions     TillSession[]
+
+  @@map("cash_tills")
+}
+
+model TillSession {
+  id                 String    @id @default(uuid())
+  tillId             String    @map("till_id")
+  userId             String    @map("user_id")
+  branchId           String    @map("branch_id")
+  openedAt           DateTime  @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt           DateTime? @map("closed_at") @db.Timestamptz
+  openingCash        Decimal   @default(0.0000) @map("opening_cash") @db.Decimal(19, 4)
+  systemExpectedCash Decimal   @default(0.0000) @map("system_expected_cash") @db.Decimal(19, 4)
+  actualCountedCash  Decimal   @default(0.0000) @map("actual_counted_cash") @db.Decimal(19, 4)
+  varianceAmount     Decimal   @default(0.0000) @map("variance_amount") @db.Decimal(19, 4)
+  status             String    @default("OPEN")
+  notes              String?
+
+  till               CashTill  @relation(fields: [tillId], references: [id], onDelete: Cascade)
+  user               Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  denominations      TillDenomination[]
+
+  @@map("till_sessions")
+}
+
+model TillDenomination {
+  id         String   @id @default(uuid())
+  sessionId  String   @map("session_id")
+  countType  String   @default("CLOSING") @map("count_type")
+  notes5000  Int      @default(0) @map("notes_5000")
+  notes2000  Int      @default(0) @map("notes_2000")
+  notes1000  Int      @default(0) @map("notes_1000")
+  notes500   Int      @default(0) @map("notes_500")
+  notes100   Int      @default(0) @map("notes_100")
+  notes50    Int      @default(0) @map("notes_50")
+  notes20    Int      @default(0) @map("notes_20")
+  notes10    Int      @default(0) @map("notes_10")
+  coinsTotal Decimal  @default(0.0000) @map("coins_total") @db.Decimal(19, 4)
+  totalValue Decimal  @default(0.0000) @map("total_value") @db.Decimal(19, 4)
+  countedAt  DateTime @default(now()) @map("counted_at") @db.Timestamptz
+
+  session    TillSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("till_denominations")
+}
+
+model CashRequest {
+  id                  String    @id @default(uuid())
+  requestRef          String    @unique @map("request_ref")
+  requestingBranchId  String    @map("requesting_branch_id")
+  requestedByUserId   String    @map("requested_by_user_id")
+  requestedAmount     Decimal   @map("requested_amount") @db.Decimal(19, 4)
+  currentBranchCash   Decimal   @default(0.0000) @map("current_branch_cash") @db.Decimal(19, 4)
+  requiredDate        DateTime  @map("required_date") @db.Date
+  purpose             String    @default("PAWN_DISBURSEMENTS")
+  status              String    @default("SUBMITTED")
+  approvedByUserId    String?   @map("approved_by_user_id")
+  approvedAmount      Decimal?  @map("approved_amount") @db.Decimal(19, 4)
+  approvalTimestamp   DateTime? @map("approval_timestamp") @db.Timestamptz
+  sourceType          String?   @map("source_type")
+  sourceBranchId      String?   @map("source_branch_id")
+  sourceBankAccountId String?   @map("source_bank_account_id")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  transfers           CashTransfer[]
+
+  @@map("cash_requests")
+}
+
+model CashTransfer {
+  id                   String    @id @default(uuid())
+  transferRef          String    @unique @map("transfer_ref")
+  requestId            String?   @map("request_id")
+  sourceBranchId       String    @map("source_branch_id")
+  destBranchId         String    @map("dest_branch_id")
+  dispatchedAmount     Decimal   @map("dispatched_amount") @db.Decimal(19, 4)
+  receivedAmount       Decimal?  @map("received_amount") @db.Decimal(19, 4)
+  discrepancyAmount    Decimal   @default(0.0000) @map("discrepancy_amount") @db.Decimal(19, 4)
+  status               String    @default("ASSIGNED")
+  dispatchedByUserId   String?   @map("dispatched_by_user_id")
+  transportCarrierType String?   @map("transport_carrier_type")
+  transportPersonName  String?   @map("transport_person_name")
+  transportPersonNic   String?   @map("transport_person_nic")
+  dispatchTimestamp    DateTime? @map("dispatch_timestamp") @db.Timestamptz
+  securityBagSealNo    String?   @map("security_bag_seal_number")
+  receivedByUserId     String?   @map("received_by_user_id")
+  receiptTimestamp     DateTime? @map("receipt_timestamp") @db.Timestamptz
+  discrepancyNotes     String?   @map("discrepancy_notes")
+  glJournalEntryId     String?   @map("gl_journal_entry_id")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  request              CashRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  denominations        CashTransferDenomination[]
+
+  @@map("cash_transfers")
+}
+
+model CashTransferDenomination {
+  id          String   @id @default(uuid())
+  transferId  String   @map("transfer_id")
+  stage       String   @default("DISPATCH")
+  notes5000   Int      @default(0) @map("notes_5000")
+  notes2000   Int      @default(0) @map("notes_2000")
+  notes1000   Int      @default(0) @map("notes_1000")
+  notes500    Int      @default(0) @map("notes_500")
+  notes100    Int      @default(0) @map("notes_100")
+  notes50     Int      @default(0) @map("notes_50")
+  notes20     Int      @default(0) @map("notes_20")
+  notes10     Int      @default(0) @map("notes_10")
+  coinsTotal  Decimal  @default(0.0000) @map("coins_total") @db.Decimal(19, 4)
+  totalAmount Decimal  @default(0.0000) @map("total_amount") @db.Decimal(19, 4)
+
+  transfer    CashTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  @@map("cash_transfer_denominations")
+}
+
+// ------------------------------------------------------------------------------
+// 7. SURVEILLANCE & SYSTEM SETTINGS
+// ------------------------------------------------------------------------------
+
+model CctvCamera {
+  id              String   @id
+  branchId        String   @map("branch_id")
+  cameraName      String   @map("camera_name")
+  cameraIp        String   @map("camera_ip")
+  cameraModel     String?  @default("EZVIZ CS-H6c") @map("camera_model")
+  rtspUrl         String   @map("rtsp_url")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  recordings      CctvRecording[]
+  auditLogs       CctvAuditLog[]
+
+  @@map("cctv_cameras")
+}
+
+model CctvRecording {
+  id           String   @id @default(uuid())
+  cameraId     String   @map("camera_id")
+  pawnId       String?  @map("pawn_id")
+  videoUrl     String   @map("video_url")
+  durationSec  Int      @default(20) @map("duration_sec")
+  fileSizeBytes BigInt? @map("file_size_bytes")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  camera       CctvCamera @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+
+  @@map("cctv_recordings")
+}
+
+model CctvAuditLog {
+  id        String   @id @default(uuid())
+  cameraId  String   @map("camera_id")
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  camera    CctvCamera @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+
+  @@map("cctv_audit_logs")
+}
+
+model CctvSetting {
+  branchId             String   @id @map("branch_id")
+  heartbeatIntervalSec Int      @default(30) @map("heartbeat_interval_sec")
+  evidenceDurationSec  Int      @default(20) @map("evidence_duration_sec")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("cctv_settings")
+}
+
+model SmsLog {
+  id        String   @id @default(uuid())
+  phone     String
+  message   String
+  status    String   @default("SENT")
+  ticketNo  String?  @map("ticket_no")
+  amount    Decimal? @db.Decimal(19, 4)
+  branchId  String?  @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("sms_logs")
+}
+
+model SystemSetting {
+  key         String   @id
+  value       Json
+  description String?
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("system_settings")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  userEmail String?  @map("user_email")
+  role      String?
+  branchId  String?  @map("branch_id")
+  action    String
+  resource  String
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("audit_logs")
+}

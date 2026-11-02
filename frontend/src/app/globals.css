@@ -1,0 +1,130 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Brand Colors - MIFOS Palette */
+  --mifos-gold: #ffd100;
+  --mifos-gold-light: #ffee32;
+  --mifos-grey: #d6d6d6;
+  --mifos-charcoal: #333533;
+  --mifos-onyx: #202020;
+}
+
+:root {
+  --background: #f8f9fa;
+  --foreground: #202020;
+  --card: #ffffff;
+  --card-foreground: #202020;
+  --popover: #ffffff;
+  --popover-foreground: #202020;
+  --primary: #ffd100;
+  --primary-foreground: #202020;
+  --secondary: #333533;
+  --secondary-foreground: #ffffff;
+  --muted: #f1f3f5;
+  --muted-foreground: #6c757d;
+  --accent: #ffee32;
+  --accent-foreground: #202020;
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --border: #e9ecef;
+  --input: #dee2e6;
+  --ring: rgba(255, 209, 0, 0.45);
+  --radius: 0.875rem;
+
+  --sidebar: #202020;
+  --sidebar-foreground: #f8f9fa;
+  --sidebar-primary: #ffd100;
+  --sidebar-primary-foreground: #202020;
+  --sidebar-accent: #333533;
+  --sidebar-accent-foreground: #ffee32;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #ffd100;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/30 selection:text-foreground;
+  }
+  html {
+    @apply font-sans scroll-smooth;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/90 backdrop-blur-xl border border-slate-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)];
+  }
+  
+  .glass-dark {
+    @apply bg-[#202020]/95 backdrop-blur-xl border border-white/10 shadow-2xl;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 font-black;
+  }
+
+  .text-gradient-gold {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-[#ffd100] via-[#ffee32] to-[#ffd100] font-black;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 hover:scale-[1.01] hover:shadow-xl hover:shadow-black/5 active:scale-[0.99];
+  }
+
+  /* Hides the scrollbar visually while keeping scroll functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;   /* IE & Edge */
+    scrollbar-width: none;      /* Firefox */
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;              /* Chrome, Safari, Opera */
+  }
+}

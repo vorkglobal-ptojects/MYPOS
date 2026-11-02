@@ -1,0 +1,28 @@
+{
+  "name": "mifos-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rupasinghe Pawning Hub & Microfinance Enterprise Monorepo",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "npm --prefix backend run dev",
+    "dev:all": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "start:backend": "npm --prefix backend run start",
+    "start:frontend": "npm --prefix frontend run start",
+    "prisma:generate": "npm --prefix backend run prisma:generate",
+    "prisma:migrate": "npm --prefix backend run prisma:migrate"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
+

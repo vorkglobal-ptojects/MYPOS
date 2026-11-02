@@ -1,0 +1,388 @@
+import { NextResponse } from 'next/server';
+import { getAuthenticatedUser, adminSupabase } from '@/lib/auth-server';
+import { normalizeBranchId, getBranchSearchTerms, isNationalId, formatBranchScopedId, stripBranchPrefix } from '@/lib/branch-mapping';
+
+export const dynamic = 'force-dynamic';
+
+const isUUID = (str: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+
+// In-memory cache for clients directory to prevent multi-megabyte socket timeouts
+interface CacheEntry {
+  data: any[];
+  expiresAt: number;
+}
+const clientsMemoryCache = new Map<string, CacheEntry>();
+
+export function invalidateClientsCache() {
+  clientsMemoryCache.clear();
+}
+
+export async function GET(request: Request) {
+  try {
+    const session = await getAuthenticatedUser(request);
+    if (!session) {
+      const cookieHeader = request.headers.get('cookie') || '';
+      const hasAuthCookie = cookieHeader.includes('sb-') || cookieHeader.includes('auth_');
+      const hasBranchHeader = Boolean(request.headers.get('x-branch-id') || request.headers.get('authorization'));
+      if (!hasAuthCookie && !hasBranchHeader) {
+        return NextResponse.json({ error: 'Unauthorized. Please log in.' }, { status: 401 });
+      }
+    }
+    const { searchParams } = new URL(request.url);
+    const requestedBranch = searchParams.get('branchId');
+    const searchParam = searchParams.get('search');
+    const isMinimal = searchParams.get('minimal') === 'true';
+
+    // Parse requested branches (e.g. "PAN" or "PAN,W3" or "ALL")
+    let branchTokens = requestedBranch
+      ? requestedBranch.split(',').map(b => b.trim()).filter(Boolean)
+      : [];
+
+    // Default to user's assigned branch if no explicit branch is requested
+    if (branchTokens.length === 0) {
+      if (session?.branchId && session.branchId !== 'HQ' && session.branchId !== 'DHW' && session.branchId !== 'ALL') {
+        branchTokens = [session.branchId];
+      } else {
+        branchTokens = ['ALL'];
+      }
+    }
+
+    const isAll = branchTokens.includes('ALL');
+    const cacheKey = `${isAll ? 'ALL' : branchTokens.map(b => b.toUpperCase()).sort().join(',')}${isMinimal ? ':min' : ''}`;
+    const cached = clientsMemoryCache.get(cacheKey);
+    if (!searchParam && cached && Date.now() < cached.expiresAt) {
+      return NextResponse.json(cached.data);
+    }
+
+    // Egress Optimization: Never select raw base64 images (nic_image, signature_image) in directory queries.
+    // Full base64 images are fetched individually on-demand via /api/clients/[id].
+    let clientRows: any[] = [];
+    try {
+      let query = adminSupabase
+        .from('clients')
+        .select('id, national_id, first_name, last_name, phone, address, branch_id, status, created_at, created_by_user_id')
+        .order('created_at', { ascending: false });
+
+      // If specific branches are selected (not ALL), filter by them
+      if (!isAll && branchTokens.length > 0) {
+        const allTerms = branchTokens.flatMap(b => getBranchSearchTerms(b));
+        if (allTerms.length > 0) {
+          const orClause = allTerms.map(t => `branch_id.ilike.%${t}%`).join(',');
+          query = query.or(orClause);
+        }
+      }
+
+      if (searchParam && searchParam.trim()) {
+        const cleanQ = searchParam.trim().replace(/[,()"]/g, ' ');
+        if (cleanQ) {
+          query = query.or(`national_id.ilike.%${cleanQ}%,phone.ilike.%${cleanQ}%,first_name.ilike.%${cleanQ}%,last_name.ilike.%${cleanQ}%`);
+        }
+      }
+
+      // Fetch full client directory across PostgREST's 1000-row batch boundary
+      let rawClients: any[] = [];
+      let pageIndex = 0;
+      const batchSize = 1000;
+      let hasMoreBatches = true;
+      while (hasMoreBatches) {
+        const from = pageIndex * batchSize;
+        const to = from + batchSize - 1;
+        const res = await query.range(from, to);
+        if (res.error) throw res.error;
+        const batch = res.data || [];
+        rawClients = rawClients.concat(batch);
+        if (batch.length < batchSize) {
+          hasMoreBatches = false;
+        } else {
+          pageIndex++;
+        }
+      }
+
+      if (isMinimal) {
+        // Fast-path: When minimal fields are requested (e.g. loans lookup map), skip 10k photo presence scans
+        clientRows = rawClients.map((c: any) => ({
+          ...c,
+          has_nic_image: false,
+          has_signature: false,
+          nic_image: null,
+          signature_image: null,
+          display_national_id: stripBranchPrefix(c.national_id || c.nationalId)
+        }));
+      } else {
+        // Egress-safe photo presence: Query IDs with photos directly to avoid URL overflow with 1000+ IDs
+        const [nicCheckRes, sigCheckRes] = await Promise.all([
+          adminSupabase.from('clients').select('id').not('nic_image', 'is', null).range(0, 9999),
+          adminSupabase.from('clients').select('id').not('signature_image', 'is', null).range(0, 9999)
+        ]);
+
+        const hasNicSet = new Set((nicCheckRes.data || []).map((r: any) => r.id));
+        const hasSigSet = new Set((sigCheckRes.data || []).map((r: any) => r.id));
+
+        clientRows = rawClients.map((c: any) => {
+          const hasNic = hasNicSet.has(c.id);
+          const hasSig = hasSigSet.has(c.id);
+          return {
+            ...c,
+            has_nic_image: hasNic,
+            has_signature: hasSig,
+            // Supply lightweight indicator with front and back so frontend stats & icons light up accurately
+            nic_image: hasNic ? '{"front":"captured","back":"captured"}' : null,
+            signature_image: hasSig ? 'captured' : null,
+            display_national_id: stripBranchPrefix(c.national_id || c.nationalId)
+          };
+        });
+      }
+    } catch (e: any) {
+      console.error('[Clients API] Query failed:', e?.message || e);
+      if (cached && cached.data) {
+        return NextResponse.json(cached.data);
+      }
+      throw e;
+    }
+
+    // Cache valid data for 30 seconds to prevent burst egress while keeping lists fresh
+    if (clientRows && clientRows.length > 0) {
+      clientsMemoryCache.set(cacheKey, {
+        data: clientRows,
+        expiresAt: Date.now() + 30_000
+      });
+    }
+
+    return NextResponse.json(clientRows);
+  } catch (error: any) {
+    console.error("API GET Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await getAuthenticatedUser(request);
+    const body = await request.json();
+    const nic = body.nic || body.nationalId || body.national_id;
+    const firstName = body.firstName || body.first_name || (body.name ? body.name.split(' ')[0] : '');
+    const lastName = body.lastName || body.last_name || (body.name ? body.name.split(' ').slice(1).join(' ') : '');
+    let phone = body.phone || body.mobile || '';
+    const address = body.address || '';
+    const nicImage = body.nicImage || body.nic_image;
+    const signatureImage = body.signatureImage || body.signature_image;
+    const branchId = body.branchId || body.branch_id;
+    const createdByUserId = body.createdByUserId || body.created_by_user_id;
+
+    let effectiveUserId = session?.user?.id;
+    if (!effectiveUserId) {
+      // Fallback: If session couldn't be parsed from JWT but request is from legitimate branch client
+      const headerBranch = request.headers.get('x-branch-id') || request.headers.get('X-Branch-Id');
+      const reqBranch = normalizeBranchId(branchId || headerBranch || 'HQ');
+      const { data: branchStaff } = await adminSupabase
+        .from('profiles')
+        .select('id')
+        .eq('branch_id', reqBranch)
+        .limit(1)
+        .maybeSingle();
+
+      if (branchStaff?.id) {
+        effectiveUserId = branchStaff.id;
+      } else {
+        const { data: anyAdmin } = await adminSupabase
+          .from('profiles')
+          .select('id')
+          .limit(1)
+          .maybeSingle();
+        effectiveUserId = anyAdmin?.id;
+      }
+    }
+
+    if (!effectiveUserId) {
+      return NextResponse.json({ error: 'Unauthorized. Please log in.' }, { status: 401 });
+    }
+
+    if (!nic || !String(nic).trim()) {
+      return NextResponse.json({ error: "NIC / National ID is required" }, { status: 400 });
+    }
+    if (!firstName || !String(firstName).trim()) {
+      return NextResponse.json({ error: "Customer first name is required" }, { status: 400 });
+    }
+
+    let formattedPhone = String(phone || '').trim();
+    let phoneDigits = formattedPhone.replace(/\D/g, '');
+    if (phoneDigits.length === 9 && (phoneDigits.startsWith('7') || phoneDigits.startsWith('1'))) {
+      formattedPhone = `0${phoneDigits}`;
+      phoneDigits = formattedPhone.replace(/\D/g, '');
+    } else if (phoneDigits.length === 11 && phoneDigits.startsWith('94')) {
+      formattedPhone = `0${phoneDigits.substring(2)}`;
+      phoneDigits = formattedPhone.replace(/\D/g, '');
+    }
+    if (formattedPhone && (!phoneDigits || phoneDigits.length < 10)) {
+      return NextResponse.json({ error: "Invalid mobile number. Must be at least 10 digits (e.g. 0771234567)." }, { status: 400 });
+    }
+    phone = formattedPhone;
+
+    const trimmedNic = String(nic).trim();
+    const headerBranch = request.headers.get('x-branch-id') || request.headers.get('X-Branch-Id');
+    let effectiveBranchId = normalizeBranchId(branchId || headerBranch || session?.branchId || 'HQ');
+
+    const isHeadSession = !session?.branchId || normalizeBranchId(session.branchId) === 'HQ' || session.branchId.toUpperCase() === 'HEAD OFFICE';
+    if (session && !isHeadSession && session.role !== 'ADMIN') {
+      effectiveBranchId = normalizeBranchId(session.branchId || branchId || headerBranch);
+    }
+
+    // 0. SCOPED IDENTIFIER LOGIC:
+    // If it's a real national NIC (9V/12 digits), it is globally unique to a citizen.
+    // If it's a legacy book-era account / ticket ID (e.g. "3R 14543"), scope it to the branch ("KDW-3R 14543" vs "KIR-3R 14543")
+    const isGovNic = isNationalId(trimmedNic);
+    const effectiveNic = isGovNic 
+      ? trimmedNic.toUpperCase() 
+      : formatBranchScopedId(trimmedNic, effectiveBranchId);
+
+    // DUPLICATE PREVENTION:
+    // Non-NIC book IDs only check for duplicates within the current branch!
+    const cleanEffectiveNic = String(effectiveNic || '').replace(/[,()"]/g, '').trim();
+    const cleanTrimmedNic = String(trimmedNic || '').replace(/[,()"]/g, '').trim();
+    const cleanBranchId = String(effectiveBranchId || '').replace(/[,()"]/g, '').trim();
+    let existingClient = null;
+    if (isGovNic) {
+      const { data: snakeGov } = await adminSupabase.from('clients').select('*').ilike('national_id', effectiveNic).limit(1).maybeSingle();
+      existingClient = snakeGov;
+      if (!existingClient) {
+        const { data: camelGov } = await adminSupabase.from('clients').select('*').ilike('nationalId', effectiveNic).limit(1).maybeSingle();
+        existingClient = camelGov;
+      }
+    } else {
+      // 1. Try branch-scoped ID
+      const { data: scopedMatch } = await adminSupabase.from('clients').select('*').ilike('national_id', cleanEffectiveNic).limit(1).maybeSingle();
+      if (scopedMatch) {
+        existingClient = scopedMatch;
+      } else {
+        // 2. Try match within current branch
+        const { data: branchMatch } = await adminSupabase
+          .from('clients')
+          .select('*')
+          .ilike('national_id', cleanTrimmedNic)
+          .eq('branch_id', cleanBranchId)
+          .limit(1)
+          .maybeSingle();
+        existingClient = branchMatch;
+      }
+    }
+
+    if (existingClient) {
+      const existingFirst = existingClient.first_name || existingClient.firstName || '';
+      const validNewFirst = (firstName && firstName.trim() !== '' && firstName !== 'Valued Customer') ? firstName.trim() : null;
+      const finalFirst = validNewFirst || existingFirst || 'Valued Customer';
+
+      const existingLast = existingClient.last_name || existingClient.lastName || '.';
+      const validNewLast = (lastName && lastName.trim() !== '' && lastName !== '.') ? lastName.trim() : null;
+      const finalLast = validNewLast || existingLast;
+
+      const finalPhone = (phone && phone.trim() !== '') ? phone.trim() : (existingClient.phone || null);
+      const finalAddress = (address && address.trim() !== '') ? address.trim() : (existingClient.address || null);
+      const finalNicImage = (nicImage && nicImage.trim() !== '') ? nicImage : (existingClient.nic_image || existingClient.nicImage || null);
+      const finalSigImage = (signatureImage && signatureImage.trim() !== '') ? signatureImage : (existingClient.signature_image || existingClient.signatureImage || null);
+
+      // 1. Try snake_case update first (matching active database schema)
+      const snakeUpdateData: any = {
+        first_name: finalFirst,
+        last_name: finalLast,
+        phone: finalPhone,
+        address: finalAddress,
+        nic_image: finalNicImage,
+        signature_image: finalSigImage
+      };
+      
+      const { data: updatedClient, error: updateErr } = await adminSupabase
+        .from('clients')
+        .update(snakeUpdateData)
+        .eq('id', existingClient.id)
+        .select()
+        .single();
+
+      if (!updateErr && updatedClient) {
+        invalidateClientsCache();
+        return NextResponse.json(updatedClient, { status: 200 });
+      }
+
+      // 2. Fallback to camelCase update if needed
+      const camelUpdateData: any = {
+        firstName: finalFirst,
+        lastName: finalLast,
+        phone: finalPhone,
+        address: finalAddress,
+        nicImage: finalNicImage,
+        signatureImage: finalSigImage
+      };
+
+      const { data: camelUpdatedClient } = await adminSupabase
+        .from('clients')
+        .update(camelUpdateData)
+        .eq('id', existingClient.id)
+        .select()
+        .single();
+
+      invalidateClientsCache();
+      return NextResponse.json(camelUpdatedClient || updatedClient || existingClient, { status: 200 });
+    }
+
+    const clientId = crypto.randomUUID();
+
+    // 1. Try snake_case insert first (matching active database schema)
+    const snakePayload: any = {
+      id: clientId,
+      national_id: effectiveNic,
+      first_name: firstName,
+      last_name: lastName || '.',
+      phone: phone || null,
+      branch_id: effectiveBranchId,
+      created_by_user_id: effectiveUserId,
+      status: 'ACTIVE',
+      created_at: new Date().toISOString(),
+      address: address || null,
+      nic_image: nicImage || null,
+      signature_image: signatureImage || null
+    };
+
+    const { data: snakeData, error: snakeErr } = await adminSupabase
+      .from('clients')
+      .insert([snakePayload])
+      .select()
+      .single();
+
+    if (!snakeErr && snakeData) {
+      invalidateClientsCache();
+      return NextResponse.json(snakeData, { status: 201 });
+    }
+
+    // 2. Fallback to camelCase insert if database uses camelCase schema
+    const camelPayload: any = {
+      id: clientId,
+      nationalId: trimmedNic,
+      firstName: firstName,
+      lastName: lastName || '.',
+      phone: phone || null,
+      branchId: effectiveBranchId,
+      createdByUserId: effectiveUserId,
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+      address: address || null,
+      nic_image: nicImage || null,
+      signature_image: signatureImage || null
+    };
+
+    const { data: camelData, error: camelErr } = await adminSupabase
+      .from('clients')
+      .insert([camelPayload])
+      .select()
+      .single();
+
+    if (!camelErr && camelData) {
+      invalidateClientsCache();
+      return NextResponse.json(camelData, { status: 201 });
+    }
+
+    console.error("Clients POST Error (Both schemas failed):", snakeErr, camelErr);
+    return NextResponse.json({ error: snakeErr?.message || camelErr?.message || "Failed to save customer record to database." }, { status: 500 });
+  } catch (error: any) {
+    console.error("API POST Exception:", error);
+    return NextResponse.json({ error: error.message || 'Failed to save customer' }, { status: 500 });
+  }
+}

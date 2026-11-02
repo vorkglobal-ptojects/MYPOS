@@ -1,0 +1,10 @@
+@import './styles/theme.css';
+
+/* Minimal CSS reset */
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  min-height: 100vh;
+}
